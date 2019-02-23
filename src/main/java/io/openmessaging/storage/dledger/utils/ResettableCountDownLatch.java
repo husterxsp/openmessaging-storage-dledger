@@ -17,8 +17,6 @@
 
 package io.openmessaging.storage.dledger.utils;
 
-import com.sun.corba.se.impl.orbutil.concurrent.Sync;
-
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.AbstractQueuedSynchronizer;
 
@@ -68,6 +66,9 @@ public class ResettableCountDownLatch {
      * interrupted status is cleared.
      *
      * @throws InterruptedException if the current thread is interrupted while waiting
+     *                              <p>
+     *                              <p>
+     *                              这里的 await 的实现是通过获取锁的方式，当state减到0的时候，就可以获取锁，然后这里相当于就等待结束。
      */
     public void await() throws InterruptedException {
         // 共享式获取同步状态，响应中断
@@ -115,7 +116,7 @@ public class ResettableCountDownLatch {
      * @throws InterruptedException if the current thread is interrupted while waiting
      */
     public boolean await(long timeout, TimeUnit unit)
-        throws InterruptedException {
+            throws InterruptedException {
         // 共享式获取同步状态，增加超时限制
         return sync.tryAcquireSharedNanos(1, unit.toNanos(timeout));
     }
@@ -178,6 +179,10 @@ public class ResettableCountDownLatch {
          * 构造函数new的时候重置一次，后续调用reset的时候会再重置一次。
          */
         Sync(int count) {
+
+            /**
+             * 自定义一个startCount用来记录起始count, 方便后面reset
+             * */
             this.startCount = count;
 
             /**
@@ -198,6 +203,7 @@ public class ResettableCountDownLatch {
 
         /**
          * 共享式获取同步状态，返回值大于等于0则表示获取成功
+         *
          * @param acquires
          * @return
          */
@@ -209,6 +215,7 @@ public class ResettableCountDownLatch {
 
         /**
          * 共享式释放同步状态
+         *
          * @param releases
          * @return
          */
