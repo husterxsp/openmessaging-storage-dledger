@@ -20,6 +20,9 @@ package io.openmessaging.storage.dledger.protocol;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 定义请求码
+ */
 public enum DLedgerRequestCode {
     UNKNOWN(-1, ""),
     METADATA(50000, ""),

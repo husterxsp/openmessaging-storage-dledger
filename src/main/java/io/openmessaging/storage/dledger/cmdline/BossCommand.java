@@ -25,6 +25,9 @@ import java.util.Map;
 
 public class BossCommand {
 
+    /**
+     * 代码执行入口， pom.xml里配置的
+     */
     public static void main(String args[]) {
         Map<String, BaseCommand> commands = new HashMap<>();
         commands.put("append", new AppendCommand());

@@ -19,6 +19,7 @@ package io.openmessaging.storage.dledger.protocol;
 
 public class HeartBeatResponse extends RequestOrResponse {
 
+    // return this, 然后可以链式调用
     public HeartBeatResponse term(long term) {
         this.term = term;
         return this;

@@ -18,29 +18,33 @@
 package io.openmessaging.storage.dledger.client;
 
 import io.openmessaging.storage.dledger.ShutdownAbleThread;
-import io.openmessaging.storage.dledger.protocol.AppendEntryRequest;
-import io.openmessaging.storage.dledger.protocol.AppendEntryResponse;
-import io.openmessaging.storage.dledger.protocol.DLedgerResponseCode;
-import io.openmessaging.storage.dledger.protocol.GetEntriesRequest;
-import io.openmessaging.storage.dledger.protocol.GetEntriesResponse;
-import io.openmessaging.storage.dledger.protocol.MetadataRequest;
-import io.openmessaging.storage.dledger.protocol.MetadataResponse;
+import io.openmessaging.storage.dledger.protocol.*;
 import io.openmessaging.storage.dledger.utils.DLedgerUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+
+/**
+ * get & append command使用，会起一个netty client，用来发送命令到netty server
+ */
 public class DLedgerClient {
 
     private static Logger logger = LoggerFactory.getLogger(DLedgerClient.class);
+
     private final Map<String, String> peerMap = new ConcurrentHashMap<>();
     private final String group;
     private String leaderId;
     private DLedgerClientRpcService dLedgerClientRpcService;
 
+
+    /**
+     * 下面定义的内部类 MetadataUpdater。内部类的好处?
+     */
     private MetadataUpdater metadataUpdater = new MetadataUpdater("MetadataUpdater", logger);
 
     public DLedgerClient(String group, String peers) {
@@ -179,7 +183,8 @@ public class DLedgerClient {
 
         }
 
-        @Override public void doWork() {
+        @Override
+        public void doWork() {
             try {
                 if (leaderId == null) {
                     for (String peer : peerMap.keySet()) {

@@ -88,6 +88,7 @@ public class DLedgerRpcNettyService extends DLedgerRpcService {
                 return false;
             }
         };
+        // netty。。。看不懂。。。应该是rocketmq又封装了一层
         //start the remoting server
         NettyServerConfig nettyServerConfig = new NettyServerConfig();
         nettyServerConfig.setListenPort(Integer.valueOf(memberState.getSelfAddr().split(":")[1]));

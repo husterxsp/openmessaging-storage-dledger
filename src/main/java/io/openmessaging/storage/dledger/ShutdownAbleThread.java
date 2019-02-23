@@ -23,6 +23,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 
+/**
+ *
+ */
 public abstract class ShutdownAbleThread extends Thread {
     protected final ResettableCountDownLatch waitPoint = new ResettableCountDownLatch(1);
     protected Logger logger;

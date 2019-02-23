@@ -19,31 +19,17 @@ package io.openmessaging.storage.dledger;
 
 import io.openmessaging.storage.dledger.entry.DLedgerEntry;
 import io.openmessaging.storage.dledger.exception.DLedgerException;
-import io.openmessaging.storage.dledger.protocol.AppendEntryRequest;
-import io.openmessaging.storage.dledger.protocol.AppendEntryResponse;
-import io.openmessaging.storage.dledger.protocol.DLedgerProtocolHander;
-import io.openmessaging.storage.dledger.protocol.DLedgerResponseCode;
-import io.openmessaging.storage.dledger.protocol.GetEntriesRequest;
-import io.openmessaging.storage.dledger.protocol.GetEntriesResponse;
-import io.openmessaging.storage.dledger.protocol.HeartBeatRequest;
-import io.openmessaging.storage.dledger.protocol.HeartBeatResponse;
-import io.openmessaging.storage.dledger.protocol.MetadataRequest;
-import io.openmessaging.storage.dledger.protocol.MetadataResponse;
-import io.openmessaging.storage.dledger.protocol.PullEntriesRequest;
-import io.openmessaging.storage.dledger.protocol.PullEntriesResponse;
-import io.openmessaging.storage.dledger.protocol.PushEntryRequest;
-import io.openmessaging.storage.dledger.protocol.PushEntryResponse;
-import io.openmessaging.storage.dledger.protocol.VoteRequest;
-import io.openmessaging.storage.dledger.protocol.VoteResponse;
+import io.openmessaging.storage.dledger.protocol.*;
 import io.openmessaging.storage.dledger.store.DLedgerMemoryStore;
 import io.openmessaging.storage.dledger.store.DLedgerStore;
 import io.openmessaging.storage.dledger.store.file.DLedgerMmapFileStore;
 import io.openmessaging.storage.dledger.utils.PreConditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class DLedgerServer implements DLedgerProtocolHander {
 
@@ -58,14 +44,22 @@ public class DLedgerServer implements DLedgerProtocolHander {
     private DLedgerLeaderElector dLedgerLeaderElector;
 
     public DLedgerServer(DLedgerConfig dLedgerConfig) {
+        // TODO 为啥这里的赋值，有的用this,有的不用。。。
+        // “this.成员变量”的方式引用成员成员变量，如果没有同名的情况下，可以直接使用。
+        // 成员变量和参数同名，成员变量被屏蔽，用“this.成员变量”的方式访问成员变量
+
+        // 参考：https://www.cnblogs.com/hasse/p/5023392.html
+        // https://blog.csdn.net/yuxin1100/article/details/51644290
+
+        // 都用this会怎么样？
         this.dLedgerConfig = dLedgerConfig;
         this.memberState = new MemberState(dLedgerConfig);
         this.dLedgerStore = createDLedgerStore(dLedgerConfig.getStoreType(), this.dLedgerConfig, this.memberState);
+
         dLedgerRpcService = new DLedgerRpcNettyService(this);
         dLedgerEntryPusher = new DLedgerEntryPusher(dLedgerConfig, memberState, dLedgerStore, dLedgerRpcService);
         dLedgerLeaderElector = new DLedgerLeaderElector(dLedgerConfig, memberState, dLedgerRpcService);
     }
-
 
 
     public void startup() {
@@ -129,9 +123,10 @@ public class DLedgerServer implements DLedgerProtocolHander {
 
     /**
      * Handle the append requests:
-     *  1.append the entry to local store
-     *  2.submit the future to entry pusher and wait the quorum ack
-     *  3.if the pending requests are full, then reject it immediately
+     * 1.append the entry to local store
+     * 2.submit the future to entry pusher and wait the quorum ack
+     * 3.if the pending requests are full, then reject it immediately
+     *
      * @param request
      * @return
      * @throws IOException

@@ -19,24 +19,31 @@ package io.openmessaging.storage.dledger;
 
 import com.alibaba.fastjson.JSON;
 import com.beust.jcommander.JCommander;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class DLedger {
 
     private static Logger logger = LoggerFactory.getLogger(DLedger.class);
 
     public static void main(String args[]) {
+
         DLedgerConfig dLedgerConfig = new DLedgerConfig();
-        JCommander.Builder builder = JCommander.newBuilder().addObject(dLedgerConfig);
-        JCommander jc = builder.build();
-        jc.parse(args);
+
+        // TODO 代码简化pr
+        JCommander.newBuilder().addObject(dLedgerConfig).build().parse(args);
+
         DLedgerServer dLedgerServer = new DLedgerServer(dLedgerConfig);
         dLedgerServer.startup();
+
         logger.info("[{}] group {} start ok with config {}", dLedgerConfig.getSelfId(), dLedgerConfig.getGroup(), JSON.toJSONString(dLedgerConfig));
+
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             private volatile boolean hasShutdown = false;
+            // TODO Shutdown 调用的次数，addShutdownHook 这里会调用多次吗？
+            // rocketmq 也有。https://www.jianshu.com/p/3e025cf69a6a
             private AtomicInteger shutdownTimes = new AtomicInteger(0);
 
             @Override

@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.AbstractQueuedSynchronizer;
 
 /**
- * Add reset feature for @see java.util.concurrent.CountDownLatch2
+ * Add reset feature for @see java.util.concurrent.CountDownLatch
  */
 public class ResettableCountDownLatch {
     private final Sync sync;
@@ -30,12 +30,13 @@ public class ResettableCountDownLatch {
      * Constructs a {@code CountDownLatch2} initialized with the given count.
      *
      * @param count the number of times {@link #countDown} must be invoked before threads can pass through {@link
-     * #await}
+     *              #await}
      * @throws IllegalArgumentException if {@code count} is negative
      */
     public ResettableCountDownLatch(int count) {
-        if (count < 0)
+        if (count < 0) {
             throw new IllegalArgumentException("count < 0");
+        }
         this.sync = new Sync(count);
     }
 
@@ -104,13 +105,13 @@ public class ResettableCountDownLatch {
      * will not wait at all.
      *
      * @param timeout the maximum time to wait
-     * @param unit the time unit of the {@code timeout} argument
+     * @param unit    the time unit of the {@code timeout} argument
      * @return {@code true} if the count reached zero and {@code false} if the waiting time elapsed before the count
      * reached zero
      * @throws InterruptedException if the current thread is interrupted while waiting
      */
     public boolean await(long timeout, TimeUnit unit)
-        throws InterruptedException {
+            throws InterruptedException {
         return sync.tryAcquireSharedNanos(1, unit.toNanos(timeout));
     }
 
@@ -156,15 +157,32 @@ public class ResettableCountDownLatch {
 
     /**
      * Synchronization control For CountDownLatch2.
-     * Uses AQS state to represent count.
+     * Uses AQS(AbstractQueuedSynchronizer, 队列同步器) state to represent count.
+     * AQS使用一个int类型的成员变量state来表示同步状态，当state>0时表示已经获取了锁，当state = 0时表示释放了锁。
+     * 它提供了三个方法（getState()、setState(int newState)、compareAndSetState(int expect,int update)）
+     * 来对同步状态state进行操作，当然AQS可以确保对state的操作是安全的。
+     * 参考：http://cmsblogs.com/?p=2174
      */
     private static final class Sync extends AbstractQueuedSynchronizer {
         private static final long serialVersionUID = 4982264981922014374L;
 
         private final int startCount;
 
+        /**
+         * 构造函数new的时候重置一次，后续调用reset的时候会再重置一次。
+         */
         Sync(int count) {
             this.startCount = count;
+
+            /**
+             * setState method:
+             * static final class Node {
+             *     private volatile int state;
+             * }
+             * protected final void setState(int newState) {
+             *     state = newState;
+             * }
+             * */
             setState(count);
         }
 
@@ -172,19 +190,34 @@ public class ResettableCountDownLatch {
             return getState();
         }
 
+        /**
+         * 共享式获取同步状态，返回值大于等于0则表示获取成功
+         * @param acquires
+         * @return
+         */
+        @Override
         protected int tryAcquireShared(int acquires) {
+            // state == 0 锁已释放
             return (getState() == 0) ? 1 : -1;
         }
 
+        /**
+         * 共享式释放同步状态
+         * @param releases
+         * @return
+         */
+        @Override
         protected boolean tryReleaseShared(int releases) {
             // Decrement count; signal when transition to zero
             for (; ; ) {
                 int c = getState();
-                if (c == 0)
+                if (c == 0) {
                     return false;
+                }
                 int nextc = c - 1;
-                if (compareAndSetState(c, nextc))
+                if (compareAndSetState(c, nextc)) {
                     return nextc == 0;
+                }
             }
         }
 
