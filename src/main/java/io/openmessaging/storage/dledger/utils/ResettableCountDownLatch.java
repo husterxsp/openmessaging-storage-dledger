@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.AbstractQueuedSynchronizer;
 
 /**
+ * 可重置的 CountDownLatch
  * Add reset feature for @see java.util.concurrent.CountDownLatch2
  */
 public class ResettableCountDownLatch {
@@ -34,8 +35,9 @@ public class ResettableCountDownLatch {
      * @throws IllegalArgumentException if {@code count} is negative
      */
     public ResettableCountDownLatch(int count) {
-        if (count < 0)
+        if (count < 0) {
             throw new IllegalArgumentException("count < 0");
+        }
         this.sync = new Sync(count);
     }
 
@@ -66,6 +68,7 @@ public class ResettableCountDownLatch {
      * @throws InterruptedException if the current thread is interrupted while waiting
      */
     public void await() throws InterruptedException {
+        // 共享式获取同步状态，响应中断
         sync.acquireSharedInterruptibly(1);
     }
 
@@ -111,6 +114,7 @@ public class ResettableCountDownLatch {
      */
     public boolean await(long timeout, TimeUnit unit)
         throws InterruptedException {
+        // 共享式获取同步状态，增加超时限制
         return sync.tryAcquireSharedNanos(1, unit.toNanos(timeout));
     }
 
@@ -150,6 +154,7 @@ public class ResettableCountDownLatch {
      *
      * @return a string identifying this latch, as well as its state
      */
+    @Override
     public String toString() {
         return super.toString() + "[Count = " + sync.getCount() + "]";
     }
