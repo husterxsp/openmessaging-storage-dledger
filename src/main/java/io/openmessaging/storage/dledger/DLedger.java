@@ -42,14 +42,14 @@ public class DLedger {
 
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             private volatile boolean hasShutdown = false;
-            // TODO Shutdown 调用的次数，addShutdownHook 这里会调用多次吗？
+            // TODO Shutdown 调用的次数，addShutdownHook 这里会调用多次吗？不会，master已改
             // rocketmq 也有。https://www.jianshu.com/p/3e025cf69a6a
             private AtomicInteger shutdownTimes = new AtomicInteger(0);
 
             @Override
             public void run() {
                 synchronized (this) {
-                    logger.info("Shutdown hook was invoked, {}", this.shutdownTimes.incrementAndGet());
+                    logger.info("Shutdown hook was invoked");
                     if (!this.hasShutdown) {
                         this.hasShutdown = true;
                         long beginTime = System.currentTimeMillis();
