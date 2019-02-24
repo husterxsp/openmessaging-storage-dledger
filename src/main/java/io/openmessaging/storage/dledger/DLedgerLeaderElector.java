@@ -18,12 +18,11 @@
 package io.openmessaging.storage.dledger;
 
 import com.alibaba.fastjson.JSON;
-import io.openmessaging.storage.dledger.protocol.DLedgerResponseCode;
-import io.openmessaging.storage.dledger.protocol.HeartBeatRequest;
-import io.openmessaging.storage.dledger.protocol.HeartBeatResponse;
-import io.openmessaging.storage.dledger.protocol.VoteRequest;
-import io.openmessaging.storage.dledger.protocol.VoteResponse;
+import io.openmessaging.storage.dledger.protocol.*;
 import io.openmessaging.storage.dledger.utils.DLedgerUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,16 +33,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class DLedgerLeaderElector {
 
     private static Logger logger = LoggerFactory.getLogger(DLedgerLeaderElector.class);
-
+    private final MemberState memberState;
     private Random random = new Random();
     private DLedgerConfig dLedgerConfig;
-    private final MemberState memberState;
     private DLedgerRpcService dLedgerRpcService;
 
     //as a server handler
@@ -61,7 +57,12 @@ public class DLedgerLeaderElector {
 
     private List<RoleChangeHandler> roleChangeHandlers = new ArrayList<>();
 
+
+    /**
+     * 上一次投票结果等于登台重新投票？？？
+     */
     private VoteResponse.ParseResult lastParseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
+
     private long lastVoteCost = 0L;
 
     private StateMaintainer stateMaintainer = new StateMaintainer("StateMaintainer", logger);
@@ -73,8 +74,15 @@ public class DLedgerLeaderElector {
         refreshIntervals(dLedgerConfig);
     }
 
+    /**
+     * 开始leader选举
+     */
     public void startup() {
+        /**
+         *
+         * */
         stateMaintainer.start();
+
         for (RoleChangeHandler roleChangeHandler : roleChangeHandlers) {
             roleChangeHandler.startup();
         }
@@ -143,6 +151,9 @@ public class DLedgerLeaderElector {
         }
     }
 
+    /**
+     * 变成leader
+     */
     public void changeRoleToLeader(long term) {
         synchronized (memberState) {
             if (memberState.currTerm() == term) {
@@ -156,6 +167,10 @@ public class DLedgerLeaderElector {
         }
     }
 
+
+    /**
+     * 变为候选者
+     */
     public void changeRoleToCandidate(long term) {
         synchronized (memberState) {
             if (term >= memberState.currTerm()) {
@@ -175,6 +190,10 @@ public class DLedgerLeaderElector {
         nextTimeToRequestVote = -1;
     }
 
+
+    /**
+     * 变成follower
+     */
     public void changeRoleToFollower(long term, String leaderId) {
         logger.info("[{}][ChangeRoleToFollower] from term: {} leaderId: {} and currTerm: {}", memberState.getSelfId(), term, leaderId, memberState.currTerm());
         memberState.changeToFollower(term, leaderId);
@@ -273,7 +292,7 @@ public class DLedgerLeaderElector {
                             break;
                     }
                     if (memberState.isQuorum(succNum.get())
-                        || memberState.isQuorum(succNum.get() + notReadyNum.get())) {
+                            || memberState.isQuorum(succNum.get() + notReadyNum.get())) {
                         beatLatch.countDown();
                     }
                 } catch (Throwable t) {
@@ -291,7 +310,7 @@ public class DLedgerLeaderElector {
             lastSuccHeartBeatTime = System.currentTimeMillis();
         } else {
             logger.info("[{}] Parse heartbeat responses in cost={} term={} allNum={} succNum={} notReadyNum={} inconsistLeader={} maxTerm={} peerSize={} lastSuccHeartBeatTime={}",
-                memberState.getSelfId(), DLedgerUtils.elapsed(startHeartbeatTimeMs), term, allNum.get(), succNum.get(), notReadyNum.get(), inconsistLeader.get(), maxTerm.get(), memberState.peerSize(), new Timestamp(lastSuccHeartBeatTime));
+                    memberState.getSelfId(), DLedgerUtils.elapsed(startHeartbeatTimeMs), term, allNum.get(), succNum.get(), notReadyNum.get(), inconsistLeader.get(), maxTerm.get(), memberState.peerSize(), new Timestamp(lastSuccHeartBeatTime));
             if (memberState.isQuorum(succNum.get() + notReadyNum.get())) {
                 lastSendHeartBeatTime = -1;
             } else if (maxTerm.get() > term) {
@@ -304,6 +323,9 @@ public class DLedgerLeaderElector {
         }
     }
 
+    /**
+     * 选举成功。
+     */
     private void maintainAsLeader() throws Exception {
         if (DLedgerUtils.elapsed(lastSendHeartBeatTime) > heartBeatTimeIntervalMs) {
             long term;
@@ -332,8 +354,16 @@ public class DLedgerLeaderElector {
         }
     }
 
+    /**
+     * 发起投票
+     * @param term
+     * @param ledgerEndTerm
+     * @param ledgerEndIndex
+     * @return
+     * @throws Exception
+     */
     private List<CompletableFuture<VoteResponse>> voteForQuorumResponses(long term, long ledgerEndTerm,
-        long ledgerEndIndex) throws Exception {
+                                                                         long ledgerEndIndex) throws Exception {
         List<CompletableFuture<VoteResponse>> responses = new ArrayList<>();
         for (String id : memberState.getPeerMap().keySet()) {
             VoteRequest voteRequest = new VoteRequest();
@@ -360,15 +390,23 @@ public class DLedgerLeaderElector {
         return System.currentTimeMillis() + lastVoteCost + minVoteIntervalMs + random.nextInt(maxVoteIntervalMs - minVoteIntervalMs);
     }
 
+    /**
+     * 保持作为候选者，这里会发起投票
+     *
+     * @throws Exception
+     */
     private void maintainAsCandidate() throws Exception {
         //for candidate
         if (System.currentTimeMillis() < nextTimeToRequestVote && !needIncreaseTermImmediately) {
             return;
         }
+
         long term;
         long ledgerEndTerm;
         long ledgerEndIndex;
+
         synchronized (memberState) {
+            // 这里不知道有什么用？？
             if (!memberState.isCandidate()) {
                 return;
             }
@@ -390,7 +428,12 @@ public class DLedgerLeaderElector {
         }
 
         long startVoteTimeMs = System.currentTimeMillis();
+
+        /**
+         * 投票结果收集
+         * */
         final List<CompletableFuture<VoteResponse>> quorumVoteResponses = voteForQuorumResponses(term, ledgerEndTerm, ledgerEndIndex);
+
         final AtomicLong knownMaxTermInGroup = new AtomicLong(-1);
         final AtomicInteger allNum = new AtomicInteger(0);
         final AtomicInteger validNum = new AtomicInteger(0);
@@ -439,8 +482,8 @@ public class DLedgerLeaderElector {
                         }
                     }
                     if (alreadyHasLeader.get()
-                        || memberState.isQuorum(acceptedNum.get())
-                        || memberState.isQuorum(acceptedNum.get() + notReadyTermNum.get())) {
+                            || memberState.isQuorum(acceptedNum.get())
+                            || memberState.isQuorum(acceptedNum.get() + notReadyTermNum.get())) {
                         voteLatch.countDown();
                     }
                 } catch (Throwable t) {
@@ -484,7 +527,7 @@ public class DLedgerLeaderElector {
         }
         lastParseResult = parseResult;
         logger.info("[{}] [PARSE_VOTE_RESULT] cost={} term={} memberNum={} allNum={} acceptedNum={} notReadyTermNum={} biggerLedgerNum={} alreadyHasLeader={} maxTerm={} result={}",
-            memberState.getSelfId(), lastVoteCost, term, memberState.peerSize(), allNum, acceptedNum, notReadyTermNum, biggerLedgerNum, alreadyHasLeader, knownMaxTermInGroup.get(), parseResult);
+                memberState.getSelfId(), lastVoteCost, term, memberState.peerSize(), allNum, acceptedNum, notReadyTermNum, biggerLedgerNum, alreadyHasLeader, knownMaxTermInGroup.get(), parseResult);
 
         if (parseResult == VoteResponse.ParseResult.PASSED) {
             logger.info("[{}] [VOTE_RESULT] has been elected to be the leader in term {}", memberState.getSelfId(), term);
@@ -496,9 +539,10 @@ public class DLedgerLeaderElector {
     /**
      * The core method of maintainer.
      * Run the specified logic according to the current role:
-     *  candidate => propose a vote.
-     *  leader => send heartbeats to followers, and step down to candidate when quorum followers do not respond.
-     *  follower => accept heartbeats, and change to candidate when no heartbeat from leader.
+     * candidate => propose a vote.
+     * leader => send heartbeats to followers, and step down to candidate when quorum followers do not respond.
+     * follower => accept heartbeats, and change to candidate when no heartbeat from leader.
+     *
      * @throws Exception
      */
     private void maintainState() throws Exception {
@@ -541,10 +585,16 @@ public class DLedgerLeaderElector {
             super(name, logger);
         }
 
-        @Override public void doWork() {
+        @Override
+        public void doWork() {
             try {
+                /**
+                 * 通过这种方式访问外部类对象？。。。
+                 * */
                 if (DLedgerLeaderElector.this.dLedgerConfig.isEnableLeaderElector()) {
+
                     DLedgerLeaderElector.this.refreshIntervals(dLedgerConfig);
+                    // 线程启动后，maintainState方法里面 会启动leader的选举
                     DLedgerLeaderElector.this.maintainState();
                 }
                 sleep(10);

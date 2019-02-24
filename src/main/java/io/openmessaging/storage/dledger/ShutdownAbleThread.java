@@ -18,19 +18,25 @@
 package io.openmessaging.storage.dledger;
 
 import io.openmessaging.storage.dledger.utils.ResettableCountDownLatch;
+import org.slf4j.Logger;
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.slf4j.Logger;
 
 /**
- *
+ * 可关闭的线程？
  */
 public abstract class ShutdownAbleThread extends Thread {
+
     protected final ResettableCountDownLatch waitPoint = new ResettableCountDownLatch(1);
+
     protected Logger logger;
+
     protected volatile AtomicBoolean hasNotified = new AtomicBoolean(false);
+
     private AtomicBoolean running = new AtomicBoolean(true);
+
     private CountDownLatch latch = new CountDownLatch(1);
 
     public ShutdownAbleThread(String name, Logger logger) {
@@ -40,6 +46,10 @@ public abstract class ShutdownAbleThread extends Thread {
     }
 
     public void shutdown() {
+        /**
+         * shutdown之后， running 为false
+         * run 方法也就不会再执行了
+         * */
         if (running.compareAndSet(true, false)) {
             try {
                 wakeup();
@@ -84,7 +94,13 @@ public abstract class ShutdownAbleThread extends Thread {
         }
     }
 
+    @Override
     public void run() {
+
+        /**
+         * 当running为true，一直循环doWork
+         * 注意runnning如果是普通boolean类型的话，可能会导致这里的。while循环无法退出?
+         * */
         while (running.get()) {
             try {
                 doWork();
@@ -94,6 +110,9 @@ public abstract class ShutdownAbleThread extends Thread {
                 }
             }
         }
+        /**
+         * CountDownLatch 计数
+         * */
         latch.countDown();
     }
 

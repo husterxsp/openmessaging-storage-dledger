@@ -41,14 +41,18 @@ public class GetCommand extends BaseCommand {
     @Override
     public void doCommand() {
         DLedgerClient dLedgerClient = new DLedgerClient(group, peers);
+
         dLedgerClient.startup();
+
         GetEntriesResponse response = dLedgerClient.get(index);
+
         logger.info("Get Result:{}", JSON.toJSONString(response));
         if (response.getEntries() != null && response.getEntries().size() > 0) {
             for (DLedgerEntry entry : response.getEntries()) {
                 logger.info("Get Result index:{} {}", entry.getIndex(), new String(entry.getBody()));
             }
         }
+
         dLedgerClient.shutdown();
     }
 }

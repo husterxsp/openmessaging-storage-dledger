@@ -36,9 +36,16 @@ public class DLedgerClient {
 
     private static Logger logger = LoggerFactory.getLogger(DLedgerClient.class);
 
+
+    /**
+     * <n1, 127.0.0.1:40912>
+     */
     private final Map<String, String> peerMap = new ConcurrentHashMap<>();
+
     private final String group;
+
     private String leaderId;
+
     private DLedgerClientRpcService dLedgerClientRpcService;
 
 
@@ -49,9 +56,19 @@ public class DLedgerClient {
 
     public DLedgerClient(String group, String peers) {
         this.group = group;
+
+        /**
+         * 这一段感觉有点多余。
+         * 感觉可以改成：
+         * peerMap = dLedgerClientRpcService.updatePeers(peers);
+         */
         updatePeers(peers);
+
         dLedgerClientRpcService = new DLedgerClientRpcNettyService();
+
         dLedgerClientRpcService.updatePeers(peers);
+
+        // 初始时从配置文件选一个当默认的leader？
         leaderId = peerMap.keySet().iterator().next();
     }
 
@@ -85,6 +102,7 @@ public class DLedgerClient {
         }
     }
 
+    // 底层是发送netty请求
     public GetEntriesResponse get(long index) {
         try {
             waitOnUpdatingMetadata(1500, false);
@@ -117,8 +135,12 @@ public class DLedgerClient {
     }
 
     public void startup() {
+        // startup是空的？抽象方法？
         this.dLedgerClientRpcService.startup();
+
+        // metadataUpdater 线程启动
         this.metadataUpdater.start();
+
     }
 
     public void shutdown() {
@@ -128,12 +150,14 @@ public class DLedgerClient {
 
     private void updatePeers(String peers) {
         for (String peerInfo : peers.split(";")) {
+            // n1-127.0.0.1:40912
             peerMap.put(peerInfo.split("-")[0], peerInfo.split("-")[1]);
         }
     }
 
     private synchronized void needFreshMetadata() {
         leaderId = null;
+        //
         metadataUpdater.wakeup();
     }
 
@@ -154,6 +178,10 @@ public class DLedgerClient {
         }
     }
 
+
+    /**
+     * 元信息更新，比如是否是 leaderId
+     */
     private class MetadataUpdater extends ShutdownAbleThread {
 
         public MetadataUpdater(String name, Logger logger) {
@@ -164,9 +192,13 @@ public class DLedgerClient {
             try {
                 MetadataRequest request = new MetadataRequest();
                 request.setGroup(group);
+
                 request.setRemoteId(peerId);
+
                 CompletableFuture<MetadataResponse> future = dLedgerClientRpcService.metadata(request);
+
                 MetadataResponse response = future.get(1500, TimeUnit.MILLISECONDS);
+
                 if (response.getLeaderId() != null) {
                     leaderId = response.getLeaderId();
                     if (response.getPeers() != null) {

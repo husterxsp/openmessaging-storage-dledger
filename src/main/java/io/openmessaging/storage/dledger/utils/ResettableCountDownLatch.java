@@ -233,7 +233,9 @@ public class ResettableCountDownLatch {
                 }
             }
         }
-
+        /**
+         * 就是比 CountDownLatch Sync 多了一个reset方法
+         */
         protected void reset() {
             setState(startCount);
         }

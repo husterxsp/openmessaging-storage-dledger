@@ -17,6 +17,7 @@
 
 package io.openmessaging.storage.dledger.utils;
 
+// https://github.com/apache/rocketmq/blob/master/common/src/main/java/org/apache/rocketmq/common/Pair.java
 public class Pair<K, V> {
 
     private K k;

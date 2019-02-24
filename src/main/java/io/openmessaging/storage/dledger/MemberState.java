@@ -20,21 +20,20 @@ package io.openmessaging.storage.dledger;
 import io.openmessaging.storage.dledger.protocol.DLedgerResponseCode;
 import io.openmessaging.storage.dledger.utils.IOUtils;
 import io.openmessaging.storage.dledger.utils.PreConditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.locks.ReentrantLock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import static io.openmessaging.storage.dledger.MemberState.Role.CANDIDATE;
-import static io.openmessaging.storage.dledger.MemberState.Role.FOLLOWER;
-import static io.openmessaging.storage.dledger.MemberState.Role.LEADER;
+import static io.openmessaging.storage.dledger.MemberState.Role.*;
 
 public class MemberState {
 
-    public static final String TERM_PERSIST_FILE = "currterm";
+    public static final String TERM_PERSIST_FILE = "currTerm";
     public static final String TERM_PERSIST_KEY_TERM = "currTerm";
     public static final String TERM_PERSIST_KEY_VOTE_FOR = "voteLeader";
     public static Logger logger = LoggerFactory.getLogger(MemberState.class);
@@ -43,7 +42,13 @@ public class MemberState {
     private final String group;
     private final String selfId;
     private final String peers;
+
+
+    /**
+     * 初始角色为 候选者
+     */
     private Role role = CANDIDATE;
+
     private String leaderId;
     private long currTerm = -1;
     private String currVoteFor;

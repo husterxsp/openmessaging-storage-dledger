@@ -27,10 +27,27 @@ public class DLedgerEntry {
     private int size;
     private long index;
     private long term;
-    private long pos; //used to validate data
-    private int channel; //reserved
-    private int chainCrc; //like the block chain, this crc indicates any modification before this entry.
-    private int bodyCrc; //the crc of the body
+
+    /**
+     * used to validate data
+     */
+    private long pos;
+
+    /**
+     * reserved
+     */
+    private int channel;
+
+    /**
+     * like the block chain, this crc indicates any modification before this entry.
+     */
+    private int chainCrc;
+
+    /**
+     * the crc of the body
+     */
+    private int bodyCrc;
+    
     private byte[] body;
 
     public int getSize() {
