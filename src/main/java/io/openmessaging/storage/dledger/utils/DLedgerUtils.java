@@ -50,7 +50,9 @@ public class DLedgerUtils {
         try {
             Thread.sleep(sleepMs);
         } catch (Throwable ignored) {
-
+            /**
+             * 直接忽略异常。。这也行？
+             */
         }
     }
 

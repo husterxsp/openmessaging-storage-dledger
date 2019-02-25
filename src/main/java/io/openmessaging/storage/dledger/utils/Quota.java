@@ -17,6 +17,10 @@
 
 package io.openmessaging.storage.dledger.utils;
 
+
+/**
+ * 什么用？
+ */
 public class Quota {
 
     private final int max;
@@ -29,6 +33,7 @@ public class Quota {
     public Quota(int max) {
         this(5, max);
     }
+
     public Quota(int window, int max) {
         if (window < 5) {
             window = 5;

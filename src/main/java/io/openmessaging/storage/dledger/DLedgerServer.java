@@ -40,7 +40,9 @@ public class DLedgerServer implements DLedgerProtocolHander {
 
     private DLedgerStore dLedgerStore;
     private DLedgerRpcService dLedgerRpcService;
+
     private DLedgerEntryPusher dLedgerEntryPusher;
+
     private DLedgerLeaderElector dLedgerLeaderElector;
 
     public DLedgerServer(DLedgerConfig dLedgerConfig) {
@@ -54,6 +56,8 @@ public class DLedgerServer implements DLedgerProtocolHander {
         // 都用this会怎么样？
         this.dLedgerConfig = dLedgerConfig;
         this.memberState = new MemberState(dLedgerConfig);
+
+        // 初始化存储
         this.dLedgerStore = createDLedgerStore(dLedgerConfig.getStoreType(), this.dLedgerConfig, this.memberState);
 
         dLedgerRpcService = new DLedgerRpcNettyService(this);
@@ -65,7 +69,12 @@ public class DLedgerServer implements DLedgerProtocolHander {
     public void startup() {
         this.dLedgerStore.startup();
         this.dLedgerRpcService.startup();
+
         this.dLedgerEntryPusher.startup();
+
+        /**
+         * 启动之后应该先进行leader选举。
+         * */
         this.dLedgerLeaderElector.startup();
     }
 
@@ -136,14 +145,22 @@ public class DLedgerServer implements DLedgerProtocolHander {
         try {
             PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), DLedgerResponseCode.UNKNOWN_MEMBER, "%s != %s", request.getRemoteId(), memberState.getSelfId());
             PreConditions.check(memberState.getGroup().equals(request.getGroup()), DLedgerResponseCode.UNKNOWN_GROUP, "%s != %s", request.getGroup(), memberState.getGroup());
+
+            /**
+             * 只有leader才能 append
+             * */
             PreConditions.check(memberState.isLeader(), DLedgerResponseCode.NOT_LEADER);
+
             long currTerm = memberState.currTerm();
+
             if (dLedgerEntryPusher.isPendingFull(currTerm)) {
+
                 AppendEntryResponse appendEntryResponse = new AppendEntryResponse();
                 appendEntryResponse.setGroup(memberState.getGroup());
                 appendEntryResponse.setCode(DLedgerResponseCode.LEADER_PENDING_FULL.getCode());
                 appendEntryResponse.setTerm(currTerm);
                 appendEntryResponse.setLeaderId(memberState.getSelfId());
+
                 return AppendFuture.newCompletedFuture(-1, appendEntryResponse);
             } else {
                 DLedgerEntry dLedgerEntry = new DLedgerEntry();
@@ -167,11 +184,17 @@ public class DLedgerServer implements DLedgerProtocolHander {
             PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), DLedgerResponseCode.UNKNOWN_MEMBER, "%s != %s", request.getRemoteId(), memberState.getSelfId());
             PreConditions.check(memberState.getGroup().equals(request.getGroup()), DLedgerResponseCode.UNKNOWN_GROUP, "%s != %s", request.getGroup(), memberState.getGroup());
             PreConditions.check(memberState.isLeader(), DLedgerResponseCode.NOT_LEADER);
+
+            // 调用store存储
             DLedgerEntry entry = dLedgerStore.get(request.getBeginIndex());
+
             GetEntriesResponse response = new GetEntriesResponse();
+
             response.setGroup(memberState.getGroup());
             if (entry != null) {
+
                 response.setEntries(Collections.singletonList(entry));
+
             }
             return CompletableFuture.completedFuture(response);
         } catch (DLedgerException e) {
@@ -213,6 +236,7 @@ public class DLedgerServer implements DLedgerProtocolHander {
         try {
             PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), DLedgerResponseCode.UNKNOWN_MEMBER, "%s != %s", request.getRemoteId(), memberState.getSelfId());
             PreConditions.check(memberState.getGroup().equals(request.getGroup()), DLedgerResponseCode.UNKNOWN_GROUP, "%s != %s", request.getGroup(), memberState.getGroup());
+
             return dLedgerEntryPusher.handlePush(request);
         } catch (DLedgerException e) {
             logger.error("[{}][HandlePush] failed", memberState.getSelfId(), e);

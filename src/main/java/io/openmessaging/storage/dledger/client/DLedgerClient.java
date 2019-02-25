@@ -75,16 +75,19 @@ public class DLedgerClient {
     public AppendEntryResponse append(byte[] body) {
         try {
             waitOnUpdatingMetadata(1500, false);
+
             if (leaderId == null) {
                 AppendEntryResponse appendEntryResponse = new AppendEntryResponse();
                 appendEntryResponse.setCode(DLedgerResponseCode.METADATA_ERROR.getCode());
                 return appendEntryResponse;
             }
+
             AppendEntryRequest appendEntryRequest = new AppendEntryRequest();
             appendEntryRequest.setGroup(group);
             appendEntryRequest.setRemoteId(leaderId);
             appendEntryRequest.setBody(body);
             AppendEntryResponse response = dLedgerClientRpcService.append(appendEntryRequest).get();
+
             if (response.getCode() == DLedgerResponseCode.NOT_LEADER.getCode()) {
                 waitOnUpdatingMetadata(1500, true);
                 if (leaderId != null) {
@@ -92,6 +95,7 @@ public class DLedgerClient {
                     response = dLedgerClientRpcService.append(appendEntryRequest).get();
                 }
             }
+
             return response;
         } catch (Exception e) {
             needFreshMetadata();
@@ -116,7 +120,9 @@ public class DLedgerClient {
             request.setGroup(group);
             request.setRemoteId(leaderId);
             request.setBeginIndex(index);
+//            request.setNumber(number);
             GetEntriesResponse response = dLedgerClientRpcService.get(request).get();
+
             if (response.getCode() == DLedgerResponseCode.NOT_LEADER.getCode()) {
                 waitOnUpdatingMetadata(1500, true);
                 if (leaderId != null) {

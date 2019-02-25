@@ -22,6 +22,8 @@ import java.util.List;
 public class GetEntriesRequest extends RequestOrResponse {
     private Long beginIndex;
 
+    private Long number;
+
     private int maxSize;
 
     private List<Long> indexList;
@@ -48,5 +50,13 @@ public class GetEntriesRequest extends RequestOrResponse {
 
     public void setIndexList(List<Long> indexList) {
         this.indexList = indexList;
+    }
+
+    public Long getNumber() {
+        return number;
+    }
+
+    public void setNumber(Long number) {
+        this.number = number;
     }
 }

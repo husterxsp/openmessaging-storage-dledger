@@ -38,6 +38,9 @@ public class GetCommand extends BaseCommand {
     @Parameter(names = {"--index", "-i"}, description = "get entry from index")
     private long index = 0;
 
+    @Parameter(names = {"--number", "-n"}, description = "get n entry from index")
+    private long num = 1;
+
     @Override
     public void doCommand() {
         DLedgerClient dLedgerClient = new DLedgerClient(group, peers);

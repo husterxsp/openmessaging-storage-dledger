@@ -43,8 +43,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 // https://github.com/apache/rocketmq/blob/master/common/src/main/java/org/apache/rocketmq/common/MixAll.java
+
+
+/**
+ * 文件操作的工具方法
+ */
 public class IOUtils {
     public static final Charset DEFAULT_CHARSET = Charset.forName("utf-8");
+
     private static Logger logger = LoggerFactory.getLogger(IOUtils.class);
 
     public static void string2File(final String str, final String fileName) throws IOException {

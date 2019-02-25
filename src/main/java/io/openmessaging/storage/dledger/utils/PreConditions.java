@@ -20,6 +20,10 @@ package io.openmessaging.storage.dledger.utils;
 import io.openmessaging.storage.dledger.exception.DLedgerException;
 import io.openmessaging.storage.dledger.protocol.DLedgerResponseCode;
 
+
+/**
+ * 检查。如果expression 为false, 就抛出异常
+ */
 public class PreConditions {
 
     public static void check(boolean expression, DLedgerResponseCode code) throws DLedgerException {

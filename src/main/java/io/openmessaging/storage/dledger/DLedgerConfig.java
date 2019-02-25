@@ -46,7 +46,11 @@ public class DLedgerConfig {
     @Parameter(names = {"--peer-push-quotas"}, description = "The quotas of the pusher")
     private int peerPushQuota = 20 * 1024 * 1024;
 
-    private String storeType = FILE; //FILE, MEMORY
+    /**
+     * FILE, MEMORY
+     */
+    private String storeType = FILE;
+
     private String dataStorePath;
 
     private int maxPendingRequestsNum = 10000;

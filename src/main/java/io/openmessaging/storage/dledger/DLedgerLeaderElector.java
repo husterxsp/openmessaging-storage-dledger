@@ -79,7 +79,7 @@ public class DLedgerLeaderElector {
      */
     public void startup() {
         /**
-         *
+         * 启动一个状态机管理线程
          * */
         stateMaintainer.start();
 

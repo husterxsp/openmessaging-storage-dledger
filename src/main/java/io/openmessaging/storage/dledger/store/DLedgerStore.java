@@ -26,22 +26,42 @@ public abstract class DLedgerStore {
         return null;
     }
 
+    /**
+     * appendAsLeader 不用传入term和leaderID ？？?
+     * @param entry
+     * @return
+     */
     public abstract DLedgerEntry appendAsLeader(DLedgerEntry entry);
 
     public abstract DLedgerEntry appendAsFollower(DLedgerEntry entry, long leaderTerm, String leaderId);
 
+    /**
+     * get的是什么？所有已存储的？还是说commit的才能get？
+     * @param index
+     * @return
+     */
     public abstract DLedgerEntry get(Long index);
 
     public abstract long getCommittedIndex();
 
-    public void updateCommittedIndex(long term, long committedIndex) {
+    public void updateCommittedIndex(long term, long committedIndex) {}
 
-    }
-
+    /**
+     * 什么意思？
+     * @return
+     */
     public abstract long getLedgerEndTerm();
 
+    /**
+     * 什么意思？
+     * @return
+     */
     public abstract long getLedgerEndIndex();
 
+    /**
+     *
+     * @return
+     */
     public abstract long getLedgerBeginIndex();
 
     protected void updateLedgerEndIndexAndTerm() {
@@ -50,10 +70,22 @@ public abstract class DLedgerStore {
         }
     }
 
+    /**
+     * ？？？
+     */
     public void flush() {
 
     }
 
+
+    /**
+     * 删减？？？
+     *
+     * @param entry
+     * @param leaderTerm
+     * @param leaderId
+     * @return
+     */
     public long truncate(DLedgerEntry entry, long leaderTerm, String leaderId) {
         return -1;
     }
