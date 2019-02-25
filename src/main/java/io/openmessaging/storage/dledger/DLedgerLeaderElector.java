@@ -413,7 +413,10 @@ public class DLedgerLeaderElector {
             if (lastParseResult == VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT || needIncreaseTermImmediately) {
                 long prevTerm = memberState.currTerm();
                 term = memberState.nextTerm();
+
+                logger.info("{} {} {}", lastParseResult, VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT, needIncreaseTermImmediately);
                 logger.info("{}_[INCREASE_TERM] from {} to {}", memberState.getSelfId(), prevTerm, term);
+
                 lastParseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
             } else {
                 term = memberState.currTerm();
@@ -444,6 +447,8 @@ public class DLedgerLeaderElector {
 
         CountDownLatch voteLatch = new CountDownLatch(1);
         for (CompletableFuture<VoteResponse> future : quorumVoteResponses) {
+            logger.info("quorumVoteResponses size {}", quorumVoteResponses.size());
+
             future.whenComplete((VoteResponse x, Throwable ex) -> {
                 try {
                     if (ex != null) {
@@ -497,20 +502,29 @@ public class DLedgerLeaderElector {
             });
 
         }
+
+        // 投票阶段结束
         try {
             voteLatch.await(3000 + random.nextInt(maxVoteIntervalMs), TimeUnit.MILLISECONDS);
         } catch (Throwable ignore) {
 
         }
+
         lastVoteCost = DLedgerUtils.elapsed(startVoteTimeMs);
+
         VoteResponse.ParseResult parseResult;
+
         if (knownMaxTermInGroup.get() > term) {
+
             parseResult = VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT;
             nextTimeToRequestVote = getNextTimeToRequestVote();
             changeRoleToCandidate(knownMaxTermInGroup.get());
+
         } else if (alreadyHasLeader.get()) {
+
             parseResult = VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT;
             nextTimeToRequestVote = getNextTimeToRequestVote() + heartBeatTimeIntervalMs * maxHeartBeatLeak;
+
         } else if (!memberState.isQuorum(validNum.get())) {
             parseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
             nextTimeToRequestVote = getNextTimeToRequestVote();
@@ -525,12 +539,15 @@ public class DLedgerLeaderElector {
             parseResult = VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT;
             nextTimeToRequestVote = getNextTimeToRequestVote();
         }
+
         lastParseResult = parseResult;
+
         logger.info("[{}] [PARSE_VOTE_RESULT] cost={} term={} memberNum={} allNum={} acceptedNum={} notReadyTermNum={} biggerLedgerNum={} alreadyHasLeader={} maxTerm={} result={}",
                 memberState.getSelfId(), lastVoteCost, term, memberState.peerSize(), allNum, acceptedNum, notReadyTermNum, biggerLedgerNum, alreadyHasLeader, knownMaxTermInGroup.get(), parseResult);
 
         if (parseResult == VoteResponse.ParseResult.PASSED) {
             logger.info("[{}] [VOTE_RESULT] has been elected to be the leader in term {}", memberState.getSelfId(), term);
+            // 选举成功，切换到leader
             changeRoleToLeader(term);
         }
 

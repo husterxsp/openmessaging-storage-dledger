@@ -32,7 +32,6 @@ public class DLedger {
 
         DLedgerConfig dLedgerConfig = new DLedgerConfig();
 
-        // TODO 代码简化pr
         JCommander.newBuilder().addObject(dLedgerConfig).build().parse(args);
 
         DLedgerServer dLedgerServer = new DLedgerServer(dLedgerConfig);
