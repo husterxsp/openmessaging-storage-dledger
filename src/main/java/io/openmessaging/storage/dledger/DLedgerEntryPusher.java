@@ -76,8 +76,11 @@ public class DLedgerEntryPusher {
     }
 
     public void startup() {
+
         entryHandler.start();
+
         quorumAckChecker.start();
+
         for (EntryDispatcher dispatcher : dispatcherMap.values()) {
             dispatcher.start();
         }
@@ -356,13 +359,16 @@ public class DLedgerEntryPusher {
 
 
         /**
-         *  更新状态
+         * 更新状态
+         *
          * @return
          */
         private boolean checkAndFreshState() {
+            // 如果不是leader，返回
             if (!memberState.isLeader()) {
                 return false;
             }
+
             if (term != memberState.currTerm() || leaderId == null || !leaderId.equals(memberState.getLeaderId())) {
                 synchronized (memberState) {
                     if (!memberState.isLeader()) {
@@ -524,6 +530,9 @@ public class DLedgerEntryPusher {
                     writeIndex = index + 1;
                     break;
                 case COMPARE:
+                    /**
+                     * 咋只有这个需要更新？
+                     * */
                     if (this.type.compareAndSet(PushEntryRequest.Type.APPEND, PushEntryRequest.Type.COMPARE)) {
                         compareIndex = -1;
                         pendingMap.clear();
@@ -543,13 +552,16 @@ public class DLedgerEntryPusher {
                 if (!checkAndFreshState()) {
                     break;
                 }
+
                 if (type.get() != PushEntryRequest.Type.COMPARE
                         && type.get() != PushEntryRequest.Type.TRUNCATE) {
                     break;
                 }
+
                 if (compareIndex == -1 && dLedgerStore.getLedgerEndIndex() == -1) {
                     break;
                 }
+
                 //revise the compareIndex
                 if (compareIndex == -1) {
                     compareIndex = dLedgerStore.getLedgerEndIndex();
@@ -653,7 +665,8 @@ public class DLedgerEntryPusher {
     private class EntryHandler extends ShutdownAbleThread {
 
         ConcurrentMap<Long, Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>>> writeRequestMap = new ConcurrentHashMap<>();
-        BlockingQueue<Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>>> compareOrTruncateRequests = new ArrayBlockingQueue<Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>>>(100);
+        BlockingQueue<Pair<PushEntryRequest, CompletableFuture<PushEntryResponse>>> compareOrTruncateRequests = new ArrayBlockingQueue<>(100);
+
         private long lastCheckFastForwardTimeMs = System.currentTimeMillis();
 
         public EntryHandler(Logger logger) {

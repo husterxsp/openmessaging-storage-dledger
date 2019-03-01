@@ -50,11 +50,17 @@ public class MemberState {
     private Role role = CANDIDATE;
 
     private String leaderId;
+
     private long currTerm = -1;
+
     private String currVoteFor;
+
     private long ledgerEndIndex = -1;
+
     private long ledgerEndTerm = -1;
+
     private long knownMaxTermInGroup = -1;
+
     private Map<String, String> peerMap = new HashMap<>();
 
     public MemberState(DLedgerConfig config) {
@@ -115,14 +121,20 @@ public class MemberState {
     }
 
     public synchronized long nextTerm() {
+        // 检查角色是 候选者
         PreConditions.check(role == CANDIDATE, DLedgerResponseCode.ILLEGAL_MEMBER_STATE, "%s != %s", role, CANDIDATE);
+
+        // 这个if条件需要吗？
         if (knownMaxTermInGroup > currTerm) {
             currTerm = knownMaxTermInGroup;
         } else {
             ++currTerm;
         }
         currVoteFor = null;
+
+        // term变化的时候也需要持久化
         persistTerm();
+
         return currTerm;
     }
 

@@ -119,6 +119,8 @@ public class DLedgerServer implements DLedgerProtocolHander {
         try {
             PreConditions.check(memberState.getSelfId().equals(request.getRemoteId()), DLedgerResponseCode.UNKNOWN_MEMBER, "%s != %s", request.getRemoteId(), memberState.getSelfId());
             PreConditions.check(memberState.getGroup().equals(request.getGroup()), DLedgerResponseCode.UNKNOWN_GROUP, "%s != %s", request.getGroup(), memberState.getGroup());
+
+            // 收到的netty 请求，都是其他节点发过来的，self=false
             return dLedgerLeaderElector.handleVote(request, false);
         } catch (DLedgerException e) {
             logger.error("[{}][HandleVote] failed", memberState.getSelfId(), e);

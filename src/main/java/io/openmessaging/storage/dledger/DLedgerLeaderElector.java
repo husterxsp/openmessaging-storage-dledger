@@ -34,6 +34,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static io.openmessaging.storage.dledger.protocol.DLedgerResponseCode.EXPIRED_TERM;
+import static io.openmessaging.storage.dledger.protocol.VoteResponse.RESULT.*;
+
 public class DLedgerLeaderElector {
 
     private static Logger logger = LoggerFactory.getLogger(DLedgerLeaderElector.class);
@@ -48,21 +51,38 @@ public class DLedgerLeaderElector {
     private long lastSendHeartBeatTime = -1;
     private long lastSuccHeartBeatTime = -1;
     private int heartBeatTimeIntervalMs = 2000;
+
+    /**
+     * ???
+     * */
     private int maxHeartBeatLeak = 3;
-    //as a client
+
+    /**
+     * as a client
+     * 初始值为 -1。初始情况下，启动之后，就立即发起投票？不用等待随机时间了么。。。也行吧。。
+     */
     private long nextTimeToRequestVote = -1;
+
     private boolean needIncreaseTermImmediately = false;
+
     private int minVoteIntervalMs = 300;
     private int maxVoteIntervalMs = 1000;
 
+    /**
+     * 这个数组目前没有用到，不知道啥用
+     * */
     private List<RoleChangeHandler> roleChangeHandlers = new ArrayList<>();
 
 
     /**
-     * 上一次投票结果等于登台重新投票？？？
+     * 初始值是 WAIT_TO_REVOTE， 那么下面开始投票的时候就不会直接自增term了。
+     * 注意不能是
      */
     private VoteResponse.ParseResult lastParseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
 
+    /**
+     * 上一次投票耗时
+     * */
     private long lastVoteCost = 0L;
 
     private StateMaintainer stateMaintainer = new StateMaintainer("StateMaintainer", logger);
@@ -71,6 +91,7 @@ public class DLedgerLeaderElector {
         this.dLedgerConfig = dLedgerConfig;
         this.memberState = memberState;
         this.dLedgerRpcService = dLedgerRpcService;
+
         refreshIntervals(dLedgerConfig);
     }
 
@@ -102,32 +123,59 @@ public class DLedgerLeaderElector {
         this.maxVoteIntervalMs = dLedgerConfig.getMaxVoteIntervalMs();
     }
 
+    /**
+     * 处理收到的心跳请求
+     * @param request
+     * @return
+     * @throws Exception
+     */
     public CompletableFuture<HeartBeatResponse> handleHeartBeat(HeartBeatRequest request) throws Exception {
 
+
+        /**
+         * 未知leaderId
+         * */
         if (!memberState.isPeerMember(request.getLeaderId())) {
             logger.warn("[BUG] [HandleHeartBeat] remoteId={} is an unknown member", request.getLeaderId());
             return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.currTerm()).code(DLedgerResponseCode.UNKNOWN_MEMBER.getCode()));
         }
 
+        /**
+         * leader就是自己
+         * */
         if (memberState.getSelfId().equals(request.getLeaderId())) {
             logger.warn("[BUG] [HandleHeartBeat] selfId={} but remoteId={}", memberState.getSelfId(), request.getLeaderId());
             return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.currTerm()).code(DLedgerResponseCode.UNEXPECTED_MEMBER.getCode()));
         }
 
         if (request.getTerm() < memberState.currTerm()) {
-            return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.currTerm()).code(DLedgerResponseCode.EXPIRED_TERM.getCode()));
+            /**
+             * leaderID的term比当前term小
+             * */
+            return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.currTerm()).code(EXPIRED_TERM.getCode()));
         } else if (request.getTerm() == memberState.currTerm()) {
+            /**
+             * 心跳请求的leader和当前节点认为的leader是同一个，更新心跳请求接收的时间
+             * */
             if (request.getLeaderId().equals(memberState.getLeaderId())) {
+
                 lastLeaderHeartBeatTime = System.currentTimeMillis();
                 return CompletableFuture.completedFuture(new HeartBeatResponse());
             }
         }
 
+        /**
+         * 以下是非正常情况？
+         * 啥意思？？？
+         * */
         //abnormal case
         //hold the lock to get the latest term and leaderId
         synchronized (memberState) {
+            /**
+             * 这个判断上面不是已经有了吗？。。
+             * */
             if (request.getTerm() < memberState.currTerm()) {
-                return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.currTerm()).code(DLedgerResponseCode.EXPIRED_TERM.getCode()));
+                return CompletableFuture.completedFuture(new HeartBeatResponse().term(memberState.currTerm()).code(EXPIRED_TERM.getCode()));
             } else if (request.getTerm() == memberState.currTerm()) {
                 if (memberState.getLeaderId() == null) {
                     changeRoleToFollower(request.getTerm(), request.getLeaderId());
@@ -145,7 +193,7 @@ public class DLedgerLeaderElector {
                 //first change to candidate, and notify the state-maintainer thread
                 changeRoleToCandidate(request.getTerm());
                 needIncreaseTermImmediately = true;
-                //TOOD notify
+                //TODO notify
                 return CompletableFuture.completedFuture(new HeartBeatResponse().code(DLedgerResponseCode.TERM_NOT_READY.getCode()));
             }
         }
@@ -156,10 +204,15 @@ public class DLedgerLeaderElector {
      */
     public void changeRoleToLeader(long term) {
         synchronized (memberState) {
+
+            // 这里需要再检查一下吗？？？
+            // 都选举成功了，咋还需要检查term？
             if (memberState.currTerm() == term) {
                 memberState.changeToLeader(term);
                 lastSendHeartBeatTime = -1;
+
                 handleRoleChange(term, MemberState.Role.LEADER);
+
                 logger.info("[{}] [ChangeRoleToLeader] from term: {} and currTerm: {}", memberState.getSelfId(), term, memberState.currTerm());
             } else {
                 logger.warn("[{}] skip to be the leader in term: {}, but currTerm is: {}", memberState.getSelfId(), term, memberState.currTerm());
@@ -190,7 +243,6 @@ public class DLedgerLeaderElector {
         nextTimeToRequestVote = -1;
     }
 
-
     /**
      * 变成follower
      */
@@ -204,70 +256,123 @@ public class DLedgerLeaderElector {
     public CompletableFuture<VoteResponse> handleVote(VoteRequest request, boolean self) {
         //hold the lock to get the latest term, leaderId, ledgerEndIndex
         synchronized (memberState) {
+
+            /**
+             * 收到未知节点的选举请求
+             * */
             if (!memberState.isPeerMember(request.getLeaderId())) {
                 logger.warn("[BUG] [HandleVote] remoteId={} is an unknown member", request.getLeaderId());
-                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.REJECT_UNKNOWN_LEADER));
+                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(REJECT_UNKNOWN_LEADER));
             }
+
+            /**
+             * self为false, 但实际上请求的leader却是自己。。。
+             * */
             if (!self && memberState.getSelfId().equals(request.getLeaderId())) {
                 logger.warn("[BUG] [HandleVote] selfId={} but remoteId={}", memberState.getSelfId(), request.getLeaderId());
-                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.REJECT_UNEXPECTED_LEADER));
+                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(REJECT_UNEXPECTED_LEADER));
             }
+
+
             if (request.getTerm() < memberState.currTerm()) {
-                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.REJECT_EXPIRED_VOTE_TERM));
+                /**
+                 * 请求投票的term太低。拒绝
+                 * */
+                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(REJECT_EXPIRED_VOTE_TERM));
+
             } else if (request.getTerm() == memberState.currTerm()) {
+
                 if (memberState.currVoteFor() == null) {
                     //let it go
                 } else if (memberState.currVoteFor().equals(request.getLeaderId())) {
                     //repeat just let it go
                 } else {
+                    /**
+                     * 当前节点认为有leader。拒绝
+                     * 一种可能的情况：请求投票的节点与leader的连接断开，但是当前这个节点还能连接到leader
+                     */
                     if (memberState.getLeaderId() != null) {
-                        return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.REJECT_ALREADY__HAS_LEADER));
+                        return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(REJECT_ALREADY__HAS_LEADER));
                     } else {
-                        return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.REJECT_ALREADY_VOTED));
+                        /**
+                         * 已经投过票了
+                         * */
+                        return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(REJECT_ALREADY_VOTED));
                     }
                 }
             } else {
+                /**
+                 * 请求投票的term比当前大，为啥 REJECT_TERM_NOT_READY ？？？
+                 * */
                 //stepped down by larger term
                 changeRoleToCandidate(request.getTerm());
                 needIncreaseTermImmediately = true;
-                //only can handleVote when the term is consistent
-                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.REJECT_TERM_NOT_READY));
+
+                /**
+                 * 为啥只有term一致的时候才能投票。。。？？？
+                 * */
+                // only can handleVote when the term is consistent
+                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(REJECT_TERM_NOT_READY));
             }
 
+            /**
+             * getLedgerEndTerm / getLedgerEndIndex 怎么理解
+             * */
             //assert acceptedTerm is true
             if (request.getLedgerEndTerm() < memberState.getLedgerEndTerm()) {
-                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.REJECT_EXPIRED_LEDGER_TERM));
+                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(REJECT_EXPIRED_LEDGER_TERM));
             } else if (request.getLedgerEndTerm() == memberState.getLedgerEndTerm() && request.getLedgerEndIndex() < memberState.getLedgerEndIndex()) {
-                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.REJECT_SMALL_LEDGER_END_INDEX));
+                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(REJECT_SMALL_LEDGER_END_INDEX));
             }
 
             if (request.getTerm() < memberState.getLedgerEndTerm()) {
-                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.getLedgerEndTerm()).voteResult(VoteResponse.RESULT.REJECT_TERM_SMALL_THAN_LEDGER));
+                return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.getLedgerEndTerm()).voteResult(REJECT_TERM_SMALL_THAN_LEDGER));
             }
 
+            /**
+             * 确认投票
+             * */
             memberState.setCurrVoteFor(request.getLeaderId());
-            return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(VoteResponse.RESULT.ACCEPT));
+            return CompletableFuture.completedFuture(new VoteResponse(request).term(memberState.currTerm()).voteResult(ACCEPT));
+
         }
     }
 
+
+    /**
+     *
+     * leader 发送心跳
+     *
+     * @param term
+     * @param leaderId
+     * @throws Exception
+     */
     private void sendHeartbeats(long term, String leaderId) throws Exception {
+
         final AtomicInteger allNum = new AtomicInteger(1);
         final AtomicInteger succNum = new AtomicInteger(1);
         final AtomicInteger notReadyNum = new AtomicInteger(0);
         final AtomicLong maxTerm = new AtomicLong(-1);
         final AtomicBoolean inconsistLeader = new AtomicBoolean(false);
+
+        /**
+         * 这个 new CountDownLatch(1); 的作用在下面的代码中就是等待一个异步请求执行完
+         * */
         final CountDownLatch beatLatch = new CountDownLatch(1);
         long startHeartbeatTimeMs = System.currentTimeMillis();
+
         for (String id : memberState.getPeerMap().keySet()) {
             if (memberState.getSelfId().equals(id)) {
                 continue;
             }
+
             HeartBeatRequest heartBeatRequest = new HeartBeatRequest();
             heartBeatRequest.setGroup(memberState.getGroup());
             heartBeatRequest.setLocalId(memberState.getSelfId());
             heartBeatRequest.setRemoteId(id);
             heartBeatRequest.setLeaderId(leaderId);
             heartBeatRequest.setTerm(term);
+
             CompletableFuture<HeartBeatResponse> future = dLedgerRpcService.heartBeat(heartBeatRequest);
             future.whenComplete((HeartBeatResponse x, Throwable ex) -> {
                 try {
@@ -280,9 +385,16 @@ public class DLedgerLeaderElector {
                             succNum.incrementAndGet();
                             break;
                         case EXPIRED_TERM:
+                            /**
+                             * 这里是不是不对？？
+                             * 多个请求不应该比较一下吗？？
+                             * */
                             maxTerm.set(x.getTerm());
                             break;
                         case INCONSISTENT_LEADER:
+                            /**
+                             * 待看
+                             * */
                             inconsistLeader.compareAndSet(false, true);
                             break;
                         case TERM_NOT_READY:
@@ -305,15 +417,27 @@ public class DLedgerLeaderElector {
                 }
             });
         }
+
         beatLatch.await(heartBeatTimeIntervalMs, TimeUnit.MILLISECONDS);
+
         if (memberState.isQuorum(succNum.get())) {
+            /**
+             * 作为leader没啥问题，大部分节点成功回应hearbeat
+             * */
             lastSuccHeartBeatTime = System.currentTimeMillis();
         } else {
             logger.info("[{}] Parse heartbeat responses in cost={} term={} allNum={} succNum={} notReadyNum={} inconsistLeader={} maxTerm={} peerSize={} lastSuccHeartBeatTime={}",
                     memberState.getSelfId(), DLedgerUtils.elapsed(startHeartbeatTimeMs), term, allNum.get(), succNum.get(), notReadyNum.get(), inconsistLeader.get(), maxTerm.get(), memberState.peerSize(), new Timestamp(lastSuccHeartBeatTime));
             if (memberState.isQuorum(succNum.get() + notReadyNum.get())) {
+                /**
+                 * 一部分节点的term落后。
+                 * */
                 lastSendHeartBeatTime = -1;
             } else if (maxTerm.get() > term) {
+                /**
+                 * 这里有个疑问：有没有可能，上面的 isQuorum(succNum.get()) 满足，这里的maxTerm.get() > term也满足？
+                 * 有term比当前节点大。。。
+                 * */
                 changeRoleToCandidate(maxTerm.get());
             } else if (inconsistLeader.get()) {
                 changeRoleToCandidate(term);
@@ -321,6 +445,8 @@ public class DLedgerLeaderElector {
                 changeRoleToCandidate(term);
             }
         }
+
+
     }
 
     /**
@@ -365,6 +491,7 @@ public class DLedgerLeaderElector {
     private List<CompletableFuture<VoteResponse>> voteForQuorumResponses(long term, long ledgerEndTerm,
                                                                          long ledgerEndIndex) throws Exception {
         List<CompletableFuture<VoteResponse>> responses = new ArrayList<>();
+
         for (String id : memberState.getPeerMap().keySet()) {
             VoteRequest voteRequest = new VoteRequest();
             voteRequest.setGroup(memberState.getGroup());
@@ -374,12 +501,19 @@ public class DLedgerLeaderElector {
             voteRequest.setTerm(term);
             voteRequest.setRemoteId(id);
             CompletableFuture<VoteResponse> voteResponse;
+
             if (memberState.getSelfId().equals(id)) {
+
+                // 给自己投票
                 voteResponse = handleVote(voteRequest, true);
+
             } else {
-                //async
+                // async
+                // 向其他节点发起投票
                 voteResponse = dLedgerRpcService.vote(voteRequest);
+
             }
+
             responses.add(voteResponse);
 
         }
@@ -396,7 +530,10 @@ public class DLedgerLeaderElector {
      * @throws Exception
      */
     private void maintainAsCandidate() throws Exception {
-        //for candidate
+        // for candidate
+        /**
+         * 还没有超时，不需要投票
+         */
         if (System.currentTimeMillis() < nextTimeToRequestVote && !needIncreaseTermImmediately) {
             return;
         }
@@ -405,25 +542,52 @@ public class DLedgerLeaderElector {
         long ledgerEndTerm;
         long ledgerEndIndex;
 
+
+        /**
+         * 投票开始前，根据之前的投票结果来判断是否需要增加term  (INCREASE_TERM)
+         * 比如如果是prevote的情况，就不增加了。
+         * */
         synchronized (memberState) {
+
             // 这里不知道有什么用？？
+            // 准备投票的时候，状态可能会变化？
+
             if (!memberState.isCandidate()) {
                 return;
             }
+
+            /**
+             * VoteResponse.ParseResult里的一些枚举变量。。没太搞明白。
+             * */
             if (lastParseResult == VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT || needIncreaseTermImmediately) {
+
                 long prevTerm = memberState.currTerm();
+
+                /**
+                 * Provote 的问题
+                 * https://www.jianshu.com/p/1496228df9a9
+                 * term不是直接自增的吗?
+                 * 这个函数nextTerm里又检查了一下有没有比自己更高的term。。。
+                 * */
                 term = memberState.nextTerm();
 
                 logger.info("{} {} {}", lastParseResult, VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT, needIncreaseTermImmediately);
+
+                // 只有这里会
                 logger.info("{}_[INCREASE_TERM] from {} to {}", memberState.getSelfId(), prevTerm, term);
 
                 lastParseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
             } else {
+
                 term = memberState.currTerm();
+
             }
+
+            // ledgerEndIndex， ledgerEndTerm 啥含义。。。
             ledgerEndIndex = memberState.getLedgerEndIndex();
             ledgerEndTerm = memberState.getLedgerEndTerm();
         }
+
         if (needIncreaseTermImmediately) {
             nextTimeToRequestVote = getNextTimeToRequestVote();
             needIncreaseTermImmediately = false;
@@ -446,7 +610,9 @@ public class DLedgerLeaderElector {
         final AtomicBoolean alreadyHasLeader = new AtomicBoolean(false);
 
         CountDownLatch voteLatch = new CountDownLatch(1);
+
         for (CompletableFuture<VoteResponse> future : quorumVoteResponses) {
+
             logger.info("quorumVoteResponses size {}", quorumVoteResponses.size());
 
             future.whenComplete((VoteResponse x, Throwable ex) -> {
@@ -454,22 +620,32 @@ public class DLedgerLeaderElector {
                     if (ex != null) {
                         throw ex;
                     }
+
                     logger.info("[{}][GetVoteResponse] {}", memberState.getSelfId(), JSON.toJSONString(x));
+
+                    /**
+                     * 一个合法请求
+                     * */
                     if (x.getVoteResult() != VoteResponse.RESULT.UNKNOWN) {
                         validNum.incrementAndGet();
                     }
+
                     synchronized (knownMaxTermInGroup) {
                         switch (x.getVoteResult()) {
                             case ACCEPT:
+                                // 确认投票
                                 acceptedNum.incrementAndGet();
                                 break;
                             case REJECT_ALREADY_VOTED:
+                                // 拒绝，已经投过了
                                 break;
                             case REJECT_ALREADY__HAS_LEADER:
+                                // 拒绝，已经有leader了
                                 alreadyHasLeader.compareAndSet(false, true);
                                 break;
                             case REJECT_TERM_SMALL_THAN_LEDGER:
                             case REJECT_EXPIRED_VOTE_TERM:
+                                // 请求接收方term比较大，这里更新一下本地
                                 if (x.getTerm() > knownMaxTermInGroup.get()) {
                                     knownMaxTermInGroup.set(x.getTerm());
                                 }
@@ -486,6 +662,11 @@ public class DLedgerLeaderElector {
 
                         }
                     }
+                    /**
+                     * 1. 已经有leader
+                     * 2. 选举成功
+                     * 3. 还是上面说的问题，为啥只有term一致的情况下才发起投票
+                     * */
                     if (alreadyHasLeader.get()
                             || memberState.isQuorum(acceptedNum.get())
                             || memberState.isQuorum(acceptedNum.get() + notReadyTermNum.get())) {
@@ -503,7 +684,7 @@ public class DLedgerLeaderElector {
 
         }
 
-        // 投票阶段结束
+        // 投票阶段结束，等待 收到所有的投票结果。
         try {
             voteLatch.await(3000 + random.nextInt(maxVoteIntervalMs), TimeUnit.MILLISECONDS);
         } catch (Throwable ignore) {
@@ -516,8 +697,14 @@ public class DLedgerLeaderElector {
 
         if (knownMaxTermInGroup.get() > term) {
 
+            /**
+             * 当前term比较小
+             * WAIT_TO_VOTE_NEXT, 下次循环会自增term
+             * */
             parseResult = VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT;
             nextTimeToRequestVote = getNextTimeToRequestVote();
+
+            // 更新term, 继续发起选举
             changeRoleToCandidate(knownMaxTermInGroup.get());
 
         } else if (alreadyHasLeader.get()) {
@@ -526,18 +713,37 @@ public class DLedgerLeaderElector {
             nextTimeToRequestVote = getNextTimeToRequestVote() + heartBeatTimeIntervalMs * maxHeartBeatLeak;
 
         } else if (!memberState.isQuorum(validNum.get())) {
+
+            /**
+             * prevote
+             * WAIT_TO_REVOTE 下次循环不用自增term
+             * */
+            // 请求成功数太少，重新选举
             parseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
             nextTimeToRequestVote = getNextTimeToRequestVote();
+
         } else if (memberState.isQuorum(acceptedNum.get())) {
+
+            // 选举成功
             parseResult = VoteResponse.ParseResult.PASSED;
+
+            logger.info(String.valueOf(parseResult));
+
         } else if (memberState.isQuorum(acceptedNum.get() + notReadyTermNum.get())) {
+
+            // 立即重新选举？
             parseResult = VoteResponse.ParseResult.REVOTE_IMMEDIATELY;
+
         } else if (memberState.isQuorum(acceptedNum.get() + biggerLedgerNum.get())) {
+
             parseResult = VoteResponse.ParseResult.WAIT_TO_REVOTE;
             nextTimeToRequestVote = getNextTimeToRequestVote();
+
         } else {
+
             parseResult = VoteResponse.ParseResult.WAIT_TO_VOTE_NEXT;
             nextTimeToRequestVote = getNextTimeToRequestVote();
+
         }
 
         lastParseResult = parseResult;
@@ -582,6 +788,7 @@ public class DLedgerLeaderElector {
         }
     }
 
+
     public void addRoleChangeHandler(RoleChangeHandler roleChangeHandler) {
         if (!roleChangeHandlers.contains(roleChangeHandler)) {
             roleChangeHandlers.add(roleChangeHandler);
@@ -610,6 +817,7 @@ public class DLedgerLeaderElector {
                  * */
                 if (DLedgerLeaderElector.this.dLedgerConfig.isEnableLeaderElector()) {
 
+                    // 这里为啥要再调用一次？
                     DLedgerLeaderElector.this.refreshIntervals(dLedgerConfig);
                     // 线程启动后，maintainState方法里面 会启动leader的选举
                     DLedgerLeaderElector.this.maintainState();
